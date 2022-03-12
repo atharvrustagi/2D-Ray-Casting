@@ -1,5 +1,5 @@
-#include <iostream>
 #include <math.h>
+#include <iostream>
 #include <SFML/Graphics.hpp>
 #define PI 3.141592653589793238463
 #define PI2 PI * 2
@@ -10,7 +10,7 @@ const sf::Vector2i win_size = sf::Vector2i(win.getSize()), grid_size = {16, 9};
 const float block_size = win_size.x / grid_size.x;
 int dir = 0;
 sf::RectangleShape block({block_size, block_size});
-sf::CircleShape point(8, 4);
+sf::CircleShape point(3, 4);
 
 bool load_cursor (sf::Cursor& cursor)    {
     sf::Image img;
@@ -18,12 +18,12 @@ bool load_cursor (sf::Cursor& cursor)    {
     return cursor.loadFromPixels(img.getPixelsPtr(), img.getSize(), {img.getSize().x / 2, img.getSize().y / 2});
 }
 
-const char grid[9][16] = {
+const char grid[50][50] = {
     {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
     {0,0,1,1,1,1,0,0,1,1,1,1,0,0,0,0},
-    {0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0},
-    {0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0},
-    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0},
+    {0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0},
+    {0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0},
     {0,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0},
     {0,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0},
     {0,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0},
@@ -38,21 +38,26 @@ sf::Color colors[] = {
 };
 
 class RayCaster {
-    
   public:
-    RayCaster (float maxD = 200.f)   {       
-        max_dist = maxD;
-    }
+    RayCaster () {}
 
     /// Casts a ray from the given positon in the direction of the given angle (in degrees)
-    /// \return Coordinates of the end point of the casted ray
-    sf::Vector2f cast (sf::Vector2f pos, int angle)   {
+    /// \param pos starting position \param angle direction of projection
+    /// \returns Coordinates of the end point of the casted ray
+    sf::Vector2f cast_ray (sf::Vector2f pos, int angle)   {
+        // initial position
+        sf::Vector2f org = pos;
+
+        // angle to radians
+        const float radians = to_radians(angle);
+
         // tan(theta)
-        const float tangent = tan(to_radians(angle));
+        const float tangent = tan(radians);
 
         // check in which quadrant will the ray move
         const char quad = angle / 90;
         
+        // position of the block in the grid
         int bx = floor(pos.x / block_size), by = floor(pos.y / block_size), addx = (quad == 0 || quad == 3 ? 1 : -1), addy = (quad > 1 ? -1 : 1);
         
         // round off x and y to block_size multiples
@@ -62,11 +67,11 @@ class RayCaster {
         float dx = addx * block_size, dy = addy * block_size;
 
         while (bx >= 0 && bx < grid_size.x && by >= 0 && by < grid_size.y && !grid[by][bx])   {
-            auto [vx, vy] = (this->*fptr[quad]) (pos, x, y, tangent);
+            sf::Vector2f v = (this->*fptr[quad]) (pos, x, y, tangent);
             
             // check if vx is valid
-            if (x <= pos.x + vx && pos.x + vx <= x + block_size)    {
-                pos.x += vx;
+            if (x <= pos.x + v.x && pos.x + v.x <= x + block_size)    {
+                pos.x += v.x;
                 pos.y = y + (quad < 2 ? dy : 0);
                 y += dy;
                 by += addy;
@@ -74,123 +79,51 @@ class RayCaster {
             // else vy is valid
             else    {
                 pos.x = x + ((quad == 0 || quad == 3) ? dx : 0);
-                pos.y += vy;
+                pos.y += v.y;
                 x += dx;
                 bx += addx;
             }
+
+            // check if maximum length of the ray has been exceeded
+            if ((org.x - pos.x) * (org.x - pos.x) + (org.y - pos.y) * (org.y - pos.y) > max_dist_2) {
+                pos.x = org.x + max_dist * cos(radians);
+                pos.y = org.y + max_dist * sin(radians);
+                return pos;
+            }
         }
         return pos;
     }
 
-    sf::Vector2f quad_wise(sf::Vector2f pos, int dir)   {
-        // to radians
-        float radians = to_radians(dir);
-
-        // tan(theta)
-        const float tangent = tan(radians);
-
-        // check in which quadrant will the ray move
-        char quad;
-        if      (dir < 90)   quad = 0;
-        else if (dir < 180)  quad = 1;
-        else if (dir < 270)  quad = 2;
-        else                 quad = 3;
-        
-        int bx = pos.x / block_size, by = pos.y / block_size, addx = (quad == 0 || quad == 3 ? 1 : -1), addy = (quad > 1 ? -1 : 1);
-        
-        // round off x and y to block_size multiples
-        float x = block_size * bx, y = block_size * by;
-
-        // for adding
-        float dx = addx * block_size, dy = addy * block_size;
-
-        if (quad == 0)  {
-            while (bx >= 0 && bx < grid_size.x && by >= 0 && by < grid_size.y && !grid[by][bx])   {
-                float vx = (y + block_size - pos.y) / tangent, vy = (x + block_size - pos.x) * tangent;
-                
-                // check if vx is valid
-                // if ((quad == 0 || quad == 3) && x <= pos.x + vx && pos.x + vx <= x + dx || (quad == 1 || quad == 2) && x + dx <= pos.x + vx && pos.x + vx <= x)    {
-                if (x <= pos.x + vx && pos.x + vx <= x + dx)    {
-                    y += dy;
-                    pos.x += vx;
-                    pos.y = y;
-                    by += addy;
-                }
-                // else vy is valid
-                else    {
-                    x += dx;
-                    pos.x = x;
-                    pos.y += vy;
-                    bx += addx;
-                }
-            }
+    /// Casts multiple rays (according to the FOV) from the given position in the given direction
+    /// \param pos starting position \param angle direction of projection
+    /// \returns Coordinates of the end points of the casted rays
+    sf::VertexArray cast_field (sf::Vector2f pos, int angle)   {
+        // Number of points -> fov
+        sf::VertexArray points(sf::TriangleFan, fov + 1);
+        points[0].position = pos;
+        points[0].color = colors[3];
+        for (int i = 1, d = -fov / 2, mx = -d + 1; d < mx; ++i, ++d) {
+            points[i].position = cast_ray(pos, (angle + d + 360) % 360);
+            points[i].color = colors[3];
         }
-        else if (quad == 1) {
-            while (bx >= 0 && by < grid_size.y && !grid[by][bx])   {
-                float vx = (y + block_size - pos.y) / tangent, vy = (x - pos.x) * tangent;
-                
-                // check if vx is valid
-                if (x <= pos.x + vx)    {
-                    y += dy;
-                    pos.x += vx;
-                    pos.y = y;
-                    by += addy;
-                }
-                // else vy is valid
-                else    {
-                    pos.x = x;
-                    pos.y += vy;
-                    x += dx;
-                    bx += addx;
-                }
-            }
-        }
-        else if (quad == 2) {
-            while (bx >= 0 && by >= 0 && !grid[by][bx])   {
-                float vx = (y - pos.y) / tangent, vy = (x - pos.x) * tangent;
-                
-                // check if vx is valid
-                if (x <= pos.x + vx)    {
-                    pos.x += vx;
-                    pos.y = y;
-                    y += dy;
-                    by += addy;
-                }
-                // else vy is valid
-                else    {
-                    pos.x = x;
-                    pos.y += vy;
-                    x += dx;
-                    bx += addx;
-                }
-            }
-        }
-        else    {
-            while (bx < grid_size.x && by >= 0 && !grid[by][bx])   {
-                float vx = (y - pos.y) / tangent, vy = (x + block_size - pos.x) * tangent;
-                
-                // check if vx is valid
-                if (pos.x + vx <= x + block_size)    {
-                    pos.x += vx;
-                    pos.y = y;
-                    y += dy;
-                    by += addy;
-                }
-                // else vy is valid
-                else    {
-                    x += dx;
-                    pos.x = x;
-                    pos.y += vy;
-                    bx += addx;
-                }
-            }
-        }
-
-        return pos;
+        return points;
     }
-    
+
+    // set the ray_caster's maximum length of projected ray
+    void setMaxDist (float maxD) {
+        max_dist = maxD;
+        max_dist_2 = maxD * maxD;
+    }
+
+    // set the ray_caster's field of view (in degrees)
+    void setFOV (int _fov)   {
+        fov = _fov;
+        fov -= !(fov & 1);
+    }
+
   private:
-    float max_dist; // maximum length of ray in pixels
+    float max_dist = 250.f, max_dist_2 = 62500.f;   // maximum length of ray in pixels
+    int fov = 135;                                  // field of view (in degrees)
 
     // Utility functions to calculate intersection coordinates with ray, different for each quadrant
     sf::Vector2f quad0_dist (const sf::Vector2f &pos, float x, float y, float tangent)  {
@@ -234,19 +167,20 @@ void draw_line(sf::Vector2f &p1, sf::Vector2f &p2)    {
     sf::VertexArray line(sf::Lines, 2);
     line[0].position = p1;
     line[1].position = p2;
-    line[0].color = colors[3];
-    line[1].color = colors[3];
+    line[1].color = colors[2];
+    line[0].color = colors[2];
     win.draw(line);
 }
 
 void render ()   {
     draw_grid();
-    sf::Vector2f pos, mousePos = sf::Vector2f(sf::Mouse::getPosition(win));
-
-    for (int ang = 0; ang < 360; ang += 2) {
-        pos = ray_caster.cast(mousePos, ang);
-        point.setPosition(pos);
-        draw_line(pos, mousePos);
+    sf::Vector2f mousePos = sf::Vector2f(sf::Mouse::getPosition(win));
+    sf::VertexArray field = ray_caster.cast_field(mousePos, dir);
+    win.draw(field);
+    for (int i=1, n = field.getVertexCount(); i < n; ++i)   {
+        // draw_line(mousePos, field[i].position);
+        point.setPosition(field[i].position);
+        point.setFillColor(colors[2]);
         win.draw(point);
     }
 }
@@ -259,8 +193,6 @@ void init () {
 }
 
 int main()  {
-    // start the clock
-    sf::Clock clock;
     // sleep time between each frame
     sf::Time sleep_duration = sf::milliseconds(10);
     // cursor settings
@@ -270,6 +202,10 @@ int main()  {
     // initialise some values and shapes
     init();
     sf::Event event;
+    // start the clock
+    sf::Clock clock;
+    // test variables
+    ;
     // main loop
     while (win.isOpen())    {
         while (win.pollEvent(event))
