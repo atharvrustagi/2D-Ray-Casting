@@ -2,7 +2,6 @@
 #include <iostream>
 #include <SFML/Graphics.hpp>
 #define PI 3.141592653589793238463
-#define PI2 PI * 2
 
 sf::RenderWindow win(sf::VideoMode(1280, 720), "Ray Casting");
 const sf::Vector2i win_size = sf::Vector2i(win.getSize()), grid_size = {16, 9};
@@ -19,15 +18,15 @@ bool load_cursor (sf::Cursor& cursor)    {
 }
 
 const char grid[50][50] = {
-    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-    {0,0,1,1,1,1,0,0,1,1,1,1,0,0,0,0},
-    {0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0},
-    {0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0},
-    {0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0},
-    {0,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0},
-    {0,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0},
-    {0,1,1,1,0,0,0,0,0,0,0,0,0,1,0,0},
-    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,0,1,1,1,1,0,0,1,1,1,1,0,0,0,1},
+    {1,0,0,0,0,0,0,0,1,0,0,1,0,1,0,1},
+    {1,0,0,0,0,0,0,0,1,0,0,1,0,1,0,1},
+    {1,0,0,0,0,0,0,0,1,1,0,1,0,0,0,1},
+    {1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,1},
+    {1,1,1,1,0,0,1,0,0,0,0,0,0,1,0,1},
+    {1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,1},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
 };
 
 sf::Color colors[] = {
@@ -39,12 +38,14 @@ sf::Color colors[] = {
 
 class RayCaster {
   public:
-    RayCaster () {}
-
+    RayCaster () {
+        max_dist_2 = max_dist * max_dist;
+    }
+    
     /// Casts a ray from the given positon in the direction of the given angle (in degrees)
     /// \param pos starting position \param angle direction of projection
     /// \returns Coordinates of the end point of the casted ray
-    sf::Vector2f cast_ray (sf::Vector2f pos, int angle)   {
+    sf::Vector2f cast_ray (sf::Vector2f pos, int angle) {
         // initial position
         sf::Vector2f org = pos;
 
@@ -122,32 +123,32 @@ class RayCaster {
     }
 
   private:
-    float max_dist = 250.f, max_dist_2 = 62500.f;   // maximum length of ray in pixels
+    float max_dist = 1e9, max_dist_2;             // maximum length of ray in pixels
     int fov = 135;                                  // field of view (in degrees)
 
-    // Utility functions to calculate intersection coordinates with ray, different for each quadrant
-    sf::Vector2f quad0_dist (const sf::Vector2f &pos, float x, float y, float tangent)  {
-        return {(y + block_size - pos.y) / tangent, (x + block_size - pos.x) * tangent};
-    }
-
-    sf::Vector2f quad1_dist (const sf::Vector2f &pos, float x, float y, float tangent)  {
-        return {(y + block_size - pos.y) / tangent, (x - pos.x) * tangent};
-    }
-
-    sf::Vector2f quad2_dist (const sf::Vector2f &pos, float x, float y, float tangent)  {
-        return {(y - pos.y) / tangent, (x - pos.x) * tangent};
-    }
-
-    sf::Vector2f quad3_dist (const sf::Vector2f &pos, float x, float y, float tangent)  {
-        return {(y - pos.y) / tangent, (x + block_size - pos.x) * tangent};
-    }
-
     // Array of utility functions
-    sf::Vector2f (RayCaster::* fptr[4]) (const sf::Vector2f &, float, float, float) = {
+    sf::Vector2f (RayCaster::* fptr[4]) (const sf::Vector2f &, float, float, float) const = {
         &RayCaster::quad0_dist, &RayCaster::quad1_dist, &RayCaster::quad2_dist, &RayCaster::quad3_dist
     };
 
-    float to_radians(int deg)   {
+    // Utility functions to calculate intersection coordinates with ray, different for each quadrant
+    sf::Vector2f quad0_dist (const sf::Vector2f &pos, float x, float y, float tangent) const {
+        return {(y + block_size - pos.y) / tangent, (x + block_size - pos.x) * tangent};
+    }
+
+    sf::Vector2f quad1_dist (const sf::Vector2f &pos, float x, float y, float tangent) const {
+        return {(y + block_size - pos.y) / tangent, (x - pos.x) * tangent};
+    }
+
+    sf::Vector2f quad2_dist (const sf::Vector2f &pos, float x, float y, float tangent) const {
+        return {(y - pos.y) / tangent, (x - pos.x) * tangent};
+    }
+
+    sf::Vector2f quad3_dist (const sf::Vector2f &pos, float x, float y, float tangent) const {
+        return {(y - pos.y) / tangent, (x + block_size - pos.x) * tangent};
+    }
+
+    constexpr float to_radians(int deg) const {
         return PI * deg / 180;
     }
 } ray_caster;
@@ -163,12 +164,12 @@ void draw_grid ()    {
     }
 }
 
-void draw_line(sf::Vector2f &p1, sf::Vector2f &p2)    {
+void draw_line(sf::Vector2f &p1, sf::Vector2f &p2, const sf::Color &c)    {
     sf::VertexArray line(sf::Lines, 2);
     line[0].position = p1;
     line[1].position = p2;
-    line[1].color = colors[2];
-    line[0].color = colors[2];
+    line[1].color = c;
+    line[0].color = c;
     win.draw(line);
 }
 
@@ -178,7 +179,7 @@ void render ()   {
     sf::VertexArray field = ray_caster.cast_field(mousePos, dir);
     win.draw(field);
     for (int i=1, n = field.getVertexCount(); i < n; ++i)   {
-        // draw_line(mousePos, field[i].position);
+        draw_line(mousePos, field[i].position, colors[2]);
         point.setPosition(field[i].position);
         point.setFillColor(colors[2]);
         win.draw(point);
@@ -204,8 +205,6 @@ int main()  {
     sf::Event event;
     // start the clock
     sf::Clock clock;
-    // test variables
-    ;
     // main loop
     while (win.isOpen())    {
         while (win.pollEvent(event))
